@@ -31,31 +31,16 @@ FPGA는 JPG 파일을 직접 읽을 수 없습니다. 따라서 Python을 사용
 
 ### 1.2 변환 과정 (Step-by-Step)
 
-```plaintext
-[원본 이미지 (RGB 또는 Grayscale)]
-        ↓
-[1단계: Grayscale 변환]
-/* 컬러 이미지면 흑백으로 변환 (3채널 → 1채널) */
-        ↓
-[2단계: 색상 반전 (Invert)]
-/* 공식: new_pixel = 255 - old_pixel */
-/* 이유: MNIST는 검은 배경(0)에 흰 글씨(255)
-   하지만 우리가 그린 이미지는 흰 배경(255)에 검은 글씨(0)
-   → 포맷을 맞춰줘야 함! */
-        ↓
-[3단계: 크기 조정 (28x28)]
-/* BILINEAR 보간법 사용 (픽셀 깨짐 방지) */
-        ↓
-[4단계: Scaling (스케일링)]
-/* 공식: scaled_pixel = (pixel / 255.0) * 127 */
-/* 이유: 
-   - Float32(0.0~1.0) 연산은 FPGA 자원을 너무 많이 먹음
-   - Signed 8-bit 정수(-128~127) 범위로 변환하면 메모리 75% 절약
-   - 127로 스케일링 = 양자화(Quantization) */
-        ↓
-[5단계: Verilog 코드 생성]
-/* case(addr) 10'd0: dout = 8'd15; ... 형태로 저장 */
-```
+### 1.2 변환 과정 (Step-by-Step)
+
+| 단계 | 처리 내용 | 설명 |
+|------|-----------|------|
+| **입력** | 원본 이미지 | RGB 또는 Grayscale |
+| **1단계** | Grayscale 변환 | 컬러 이미지면 흑백으로 변환 (3채널 → 1채널) |
+| **2단계** | 색상 반전 (Invert) | `new_pixel = 255 - old_pixel`<br>MNIST는 검은 배경에 흰 글씨이므로 포맷 일치 |
+| **3단계** | 크기 조정 | 28×28로 리사이즈 (BILINEAR 보간법) |
+| **4단계** | Scaling | `(pixel / 255.0) × 127`<br>Float32 → Int8 양자화로 메모리 75% 절약 |
+| **5단계** | 코드 생성 | Verilog ROM 형태로 저장 |
 
 ### 1.3 핵심 코드 분석
 
@@ -148,21 +133,9 @@ for out_ch in range(3):   # 1. 출력 필터별로 방을 만듦
 그래서 가중치도 (필터번호, 채널번호, Row, Col) 순서로 묶어둬야 함!
 ```
 
-### 2.3 FC 가중치 변환
+### 2.3 각 계층 가중치 변환
 
-```python
-# FC Layer는 비교적 단순
-w_fc = model.layers[5].get_weights()[0]  # Shape: (48, 10)
-# Keras 순서: (Input, Neuron)
-# FPGA 순서: (Neuron, Input) ← 뉴런별로 48개 입력을 순차 처리
 
-w_fc_T = w_fc.transpose(1, 0)
-
-for neuron in range(10):  # 0~9 숫자
-    for inp in range(48):  # 48개 입력
-        val = w_fc_T[neuron, inp]
-        # 파일에 저장
-```
 
 ---
 
@@ -1215,3 +1188,13 @@ conv1_buf u_conv1_buf (
 
 이 문서는 FPGA CNN 가속기 프로젝트의 모든 코드와 설계 의도를 완벽하게 분석합니다. 
 코드 한 줄, 변수 하나의 의미까지 이해할 수 있도록 작성되었습니다.
+
+----
+
+
+
+
+---
+
+
+
