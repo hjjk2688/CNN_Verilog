@@ -1,12 +1,9 @@
-# 📘 FPGA CNN 가속기 완전 분석서 (Ultimate Deep Dive)
+# FPGA CNN 설계 및 구현
 
 > **Project:** Handwritten Digit Recognition NPU on Zybo Z7-20  
-> **Goal:** 코드 한 줄, 변수 하나까지 완벽하게 이해하기  
-> **Level:** 초보자도 따라갈 수 있는 최대한 자세한 해설
-
 ---
 
-## 📑 목차 (Table of Contents)
+## 목차 (Table of Contents)
 
 1. **[SW] 데이터 전처리 완전 분석**
 2. **[SW] 가중치 추출 및 변환 전략**
