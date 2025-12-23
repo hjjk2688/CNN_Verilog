@@ -327,25 +327,30 @@ Keras 모델 구조에 따라 입력 이미지가 어떻게 변환되는지 단�
 
 ### 5.4 구조도 시각화 (Architecture Diagram)
 
+
 ```mermaid
 graph LR
-    Input[Input\n28x28x1] --> C1[Conv1\n24x24x3]
-    C1 --> P1[Pool1\n12x12x3]
-    P1 --> C2[Conv2\n8x8x3]
-    C2 --> P2[Pool2\n4x4x3]
-    P2 --> F[Flatten\nSize: 48]
-    F --> D[Dense\nSize: 10]
+    %% 노드 정의 (HTML 태그 사용)
+    Input["<b>Input</b><br/>28x28x1"] --> C1["<b>Conv1</b><br/>24x24x3"]
+    C1 --> P1["<b>Pool1</b><br/>12x12x3"]
+    P1 --> C2["<b>Conv2</b><br/>8x8x3"]
+    C2 --> P2["<b>Pool2</b><br/>4x4x3"]
+    P2 --> F["<b>Flatten</b><br/>Size: 48"]
+    F --> D["<b>Dense</b><br/>Size: 10"]
     
-    style Input fill:#eee,stroke:#333
-    style C1 fill:#f9f,stroke:#333
-    style P1 fill:#bbf,stroke:#333
-    style C2 fill:#f9f,stroke:#333
-    style P2 fill:#bbf,stroke:#333
-    style D fill:#ff9,stroke:#333
+    %% 스타일 정의 (글자색 color:#000 검정으로 고정)
+    classDef input fill:#eee,stroke:#333,stroke-width:2px,font-size:16px,color:#000;
+    classDef conv fill:#d1c4e9,stroke:#512da8,stroke-width:2px,font-size:16px,color:#000;
+    classDef pool fill:#ffecb3,stroke:#ff8f00,stroke-width:2px,font-size:16px,color:#000;
+    classDef dense fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,font-size:16px,color:#000;
 
+    %% 스타일 적용
+    class Input input
+    class C1,C2 conv
+    class P1,P2 pool
+    class F,D dense
 ```
-
---
+---
 ## 6. [HW] 모듈별 코드 정밀 분석
 
 ### 6.1 Image ROM (FPGA의 망막)
@@ -1279,7 +1284,58 @@ conv1_buf u_conv1_buf (
 
 ## 7. 결론 및 프로젝트 성과
 
-### 7.1 기술적 성과
+### 7.1 프로젝트 이슈 및 해결
+
+#### 1. DSP 부족 문제 해결
+
+#### 1.1 파이프라인과 DSP
+* **파이프라인 (Pipeline):** **"일하는 방식"** (시간 관리 전략)
+* **DSP (Digital Signal Processing Slice):** **"일하는 도구/기계"** (물리적 자원)
+
+| 구분 | 비유 | 설명 | 사용자님 코드에서 |
+| --- | --- | --- | --- |
+| **DSP** | **숙련된 기술자 (혹은 고성능 로봇팔)** | 나사 조이기, 용접하기 같은 **힘든 일(곱셈)**을 전담해서 아주 빠르고 정확하게 처리하는 기계입니다. | `$signed(a) * signed(b)` (곱셈 기호) |
+| **파이프라인** | **컨베이어 벨트 (조립 라인)** | 기술자들이 쉴 새 없이 일할 수 있도록 **물건을 옆으로 착착 넘겨주는 시스템**입니다. | `always @(posedge clk)` 안에서 `valid` 신호 넘겨주는 구조 |
+---
+**DSP (DSP48 Slice)**
+
+* **정체:** FPGA 칩 안에는 `LUT`(논리 회로) 말고, **곱셈과 덧셈만 전문으로 하는 특수 하드웨어 블록**이 박혀 있습니다. 이걸 DSP라고 합니다.
+* **역할:** Verilog 코드에서 `*` (곱하기)를 쓰면, 합성 툴(Vivado)이 자동으로 이 DSP 블록을 가져다 씁니다.
+* **중요성:** 일반 논리 회로(LUT)로 곱셈을 만들면 면적도 엄청 차지하고 느립니다. 하지만 DSP를 쓰면 **1클럭 만에 고속 곱셈**이 가능합니다.
+
+**파이프라인 (Pipeline)**
+
+* **정체:** 데이터가 입력에서 출력까지 가는 길을 여러 단계(Stage)로 쪼개는 **설계 기법**입니다.
+* **역할:** `Stage 1(곱셈)`  `Stage 2(덧셈)`  `Stage 3(합산)` 처럼 데이터를 순차적으로 넘깁니다.
+* **목적:** 이렇게 안 하면(한 번에 다 계산하려면) 전기 신호가 도착하는 데 시간이 너무 오래 걸려서 **클럭 속도(25MHz)**를 맞출 수가 없습니다. 파이프라인은 **고속 동작을 위한 교통 정리**입니다.
+
+---
+
+#### 1.2. 왜 보드를 바꿔야 했는가? (Basys3  => Zybo Z7-20) 💡
+
+#### 필요한 DSP 개수 계산 (The Math)
+
+1. **Conv2 구조:**
+* 3개의 입력 채널(R,G,B처럼)을 동시에 받습니다.
+* 5x5 커널 크기입니다. = **25개의 픽셀**
+* 이걸 **동시에 곱합니다.**
+
+2. **필요한 곱셈기(Multiplier) 수:**
+* 1개 채널당: 25개 곱셈
+* 3개 채널 동시 연산:  **$25 \text{ (5x5커널)} \times 3 \text{ (입력채널)} = \mathbf{75}$ 75개의 곱셈기 필요**
+* 만약 출력 필터 3개도 병렬로 돌린다면?  **$75 \text{ (필터 1개당)} \times 3 \text{ (출력필터 개수)} = \mathbf{225}$ 225개의 곱셈기 필요!**
+* (설령 출력 필터를 순차적으로 해도 최소 75개 + Conv1(75개) = **150개**가 동시에 필요함)
+
+
+#### 🆚 보드별 DSP 보유량 비교
+
+| 보드 모델 | FPGA 칩 | **보유 DSP 개수** | 사용자 프로젝트 상태 |
+| --- | --- | --- | --- |
+| **Basys3** | Artix-7 (XC7A35T) | **90개** | **🚨 부족함 (Explosion)** |
+| **Zybo Z7-20** | Zynq-7000 (XC7Z020) | **220개** | **✅ 충분함 (Safe)** |
+>DSP가 220개가 있는 Zybo Z7-20 변경
+
+### 7.2 기술적 성과
 
 1. **SW/HW 완벽 연동**
    - TensorFlow 모델 → Verilog HDL 변환 성공
@@ -1295,7 +1351,7 @@ conv1_buf u_conv1_buf (
    - 32-bit 오버플로우 방지
    - Smart Reset 기능
 
-### 4.2 설계 최적화 포인트
+### 7.3 설계 최적화 포인트
 
 | 항목 | 일반적인 방법 | 본 프로젝트의 선택 | 효과 |
 |------|---------------|-------------------|------|
@@ -1304,7 +1360,7 @@ conv1_buf u_conv1_buf (
 | **속도** | 직렬 처리 | 병렬 파이프라인 | 속도 3배 향상 |
 | **나눗셈** | `/` 연산자 | `>>>` 시프트 | 회로 복잡도 감소 |
 
-### 7.3 핵심 설계 철학
+### 7.4 핵심 설계 철학
 
 ```plaintext
 1. 메모리 효율 > 계산 속도
@@ -1320,7 +1376,7 @@ conv1_buf u_conv1_buf (
    → Int8으로 정확도 유지하며 자원 절약
 ```
 
-### 7.4 학습 포인트
+### 7.5 학습 포인트
 
 이 프로젝트를 통해 배울 수 있는 것:
 
