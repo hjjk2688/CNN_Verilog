@@ -193,28 +193,44 @@ FPGA 리소스를 아끼기 위해 **8-bit Integer (Int8)** 를 사용하며, �
 ### 4.1 블록다이어그램
 
 ```mermaid
-graph LR
-    A[Image ROM] --> B[Line Buffer 1]
-    B --> C[Conv1 Buffer]
-    C --> D[Conv1 Calc]
-    D --> E[MaxPool1 & ReLU]
-    
-    E --Ch1--> F1[Line Buffer 2-1]
-    E --Ch2--> F2[Line Buffer 2-2]
-    E --Ch3--> F3[Line Buffer 2-3]
-    
-    F1 & F2 & F3 --> G[Conv2 Calc]
-    G --> H[MaxPool2 & ReLU]
-    H --> I[Fully Connected]
-    I --> J[Result Output]
-    
-    K[Top Control] -.제어.-> A
-    K -.제어.-> B
-    K -.제어.-> C
-    K -.제어.-> E
-    K -.제어.-> G
-    K -.제어.-> H
-    K -.제어.-> I
+graph TD
+    %% 스타일 정의 (심플한 파스텔 톤, 검정 글씨)
+    classDef default fill:#fff,stroke:#333,stroke-width:2px,color:#000,font-size:16px;
+    classDef rom fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000,font-size:16px;
+    classDef compute fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000,font-size:16px;
+    classDef pool fill:#f1f8e9,stroke:#388e3c,stroke-width:2px,color:#000,font-size:16px;
+    classDef ctrl fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#000,font-size:16px;
+
+    %% 중앙 상단 제어 모듈
+    Control["<b>Top Control</b><br/>System Reset & Enable"]:::ctrl
+
+    %% 제어 신호가 각 층으로 내려가는 구조
+    Control --> Layer1_Start
+    Control --> Layer2_Start
+    Control --> Layer3_Start
+
+    %% 레이어 1
+    subgraph Layer1_Start [Layer 1: Input & Conv1]
+        A["<b>Image ROM</b><br/>28x28 Data"]:::rom --> B["<b>Line Buffer 1</b>"]:::rom
+        B --> C["<b>Conv1 Buffer</b>"]:::rom
+        C --> D["<b>Conv1 Calc</b><br/>1-Channel"]:::compute
+        D --> E["<b>MaxPool1 & ReLU</b>"]:::pool
+    end
+
+    %% 레이어 2
+    subgraph Layer2_Start [Layer 2: 3-Channel Parallel]
+        E --> F["<b>Line Buffers (x3)</b><br/>Ch1, Ch2, Ch3"]:::rom
+        F --> G["<b>Conv2 Calc</b><br/>3-Ch Parallel"]:::compute
+        G --> H["<b>MaxPool2 & ReLU</b>"]:::pool
+    end
+
+    %% 레이어 3
+    subgraph Layer3_Start [Layer 3: Output]
+        H --> I["<b>Fully Connected</b><br/>Serial Accumulation"]:::compute
+        I --> J["<b>Result Output</b><br/>Final Prediction"]:::compute
+    end
+
+    %% 제어 관계 표시 (중복 방지를 위해 서브그래프 타이틀 쪽으로 흐름 정리)
 ```
 
 ### 4.2 클럭 전략
