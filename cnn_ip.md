@@ -274,19 +274,19 @@ final_sum_s7 <= sum1_s6 + sum2_s6 + sum3_s6;
 
 ```mermaid
 graph LR
-    subgraph "50MHz 구역 (고속)"
-    CLK_50[Zynq 50MHz] --> VDMA_AXI[m_axi_mm2s_aclk (DDR읽기)]
-    CLK_50 --> VDMA_AXIS[m_axis_mm2s_aclk (데이터발사)]
-    CLK_50 --> FIFO_IN[FIFO S_AXIS_ACLK (입력)]
+    subgraph FAST_50MHz
+        CLK_50["Zynq 50MHz"] --> VDMA_AXI["m_axi_mm2s_aclk (DDR읽기)"]
+        CLK_50 --> VDMA_AXIS["m_axis_mm2s_aclk (데이터발사)"]
+        CLK_50 --> FIFO_IN["FIFO S_AXIS_ACLK (입력)"]
     end
 
-    subgraph "25MHz 구역 (저속)"
-    CLK_25[Zynq 25MHz] --> FIFO_OUT[FIFO M_AXIS_ACLK (출력)]
-    CLK_25 --> VGA[VGA IP CLK (화면표시)]
+    subgraph SLOW_25MHz
+        CLK_25["Zynq 25MHz"] --> FIFO_OUT["FIFO M_AXIS_ACLK (출력)"]
+        CLK_25 --> VGA["VGA IP CLK (화면표시)"]
     end
 
-    VDMA_AXIS -- "50MHz 속도 데이터" --> FIFO_IN
-    FIFO_OUT -- "25MHz 속도 데이터" --> VGA
+    VDMA_AXIS -- "50MHz 데이터" --> FIFO_IN
+    FIFO_OUT -- "25MHz 데이터" --> VGA
 
 ```
 
@@ -690,3 +690,173 @@ model.fit(x_train, y_train, ...)
 이 두 가지만 적용하면 "터치패드 글씨가 MNIST랑 달라서 생기는 문제"는 99% 해결됩니다. **Python 코드에서 `x_train > 0.5` 처리를 추가해서 재학습 해보시는 걸 강력 추천합니다.**
 
 ---
+
+최종 보고서용으로 시스템 구성 이유를 공학적으로 정리해 드리고, Mermaid 다이어그램 에러도 바로 수정해 드리겠습니다.
+
+---
+
+## 1. 하드웨어 구성 이유 및 기술적 배경
+
+보고서의 **'시스템 설계 및 구현'** 섹션에 활용하기 좋은 전문적인 설명입니다.
+
+### **A. CNN 가속기 경로 (DMA / Width Converter / FIFO)**
+
+* **AXI DMA를 사용한 이유:**
+CPU(PS)가 직접 `for`문으로 데이터를 보내는 것보다 **DMA(Direct Memory Access)**를 사용하면 대량의 이미지 데이터를 CPU 개입 없이 고속으로 가속기에 쏟아부을 수 있습니다. 이는 시스템 전체의 연산 효율을 극대화합니다.
+* **AXI4-Stream Data Width Converter를 사용한 이유:**
+Zynq의 메모리 버스(DDR)는 보통 32비트나 64비트 단위로 데이터를 읽어오지만, 사용자님이 설계한 **CNN IP는 8비트(픽셀 단위)**를 입력으로 받습니다. 이 둘 사이의 **데이터 규격(Width)을 맞추기 위해** 32비트를 8비트로 쪼개주는 컨버터가 필수적입니다.
+* **AXI-Stream Data FIFO를 사용한 이유 (CNN):**
+DMA와 CNN IP 사이의 **속도 차이(Latency)**를 완화하는 버퍼 역할을 합니다. 가속기가 데이터를 처리하는 동안 DMA가 미리 데이터를 가져다 놓을 수 있게 하여 파이프라인 중단을 방지합니다.
+
+### **B. 비디오 출력 경로 (VDMA / FIFO / VGA)**
+
+* **AXI VDMA를 사용한 이유:**
+일반 DMA와 달리 VDMA는 **2차원 프레임 버퍼(Frame Buffer)** 개념이 탑재되어 있습니다. 화면의 가로(Stride)와 세로 길이를 인식하여 비디오 규격에 맞게 DDR 메모리를 읽어오는 데 최적화되어 있습니다.
+* **AXI-Stream Data FIFO를 사용한 이유 (비디오):**
+**가장 중요한 이유는 클럭 도메인 교차(CDC, Clock Domain Crossing)**입니다.
+1. DDR에서 데이터를 읽어오는 로직은 빠른 클럭(50MHz~100MHz)에서 돕니다.
+2. VGA 출력은 모니터 규격에 맞는 고정된 느린 클럭(25.175MHz)에서 돕니다.
+이 두 클럭 사이에서 데이터가 깨지지 않도록 FIFO가 중간에서 완충 지대 역할을 합니다.
+
+
+
+---
+
+## 3. 보고서용 구성 요약표
+
+| 구성 요소 | 핵심 역할 | 적용된 인터페이스 |
+| --- | --- | --- |
+| **AXI DMA** | 고속 데이터 전송 (PS ↔ PL) | AXI4-Memory Map / AXI4-Stream |
+| **Width Converter** | 데이터 폭 정렬 (32bit → 8bit) | AXI4-Stream |
+| **Data FIFO** | 클럭 동기화 및 버퍼링 (CDC) | AXI4-Stream |
+| **AXI VDMA** | 비디오 프레임 버퍼 관리 | AXI4-Memory Map / AXI4-Stream |
+| **VGA Controller** | VGA 타이밍 생성 (Sync) | AXI4-Stream ↔ Physical Pins |
+
+### **보고서 작성 팁:**
+
+"본 설계에서는 비디오 데이터의 실시간 안정성을 보장하기 위해 **Asynchronous FIFO**를 적용하여 VDMA의 메모리 대역폭 클럭(50MHz)과 VGA의 픽셀 전송 클럭(25MHz) 간의 **Clock Domain Crossing(CDC)** 문제를 해결하였다."라고 작성하시면 매우 전문적으로 보입니다.
+
+최종 보고서 작성을 위해 추가로 필요한 설명이나 다이어그램이 더 있을까요? 특히 CNN 내부 레이어 구조(Conv, Pooling)에 대한 설명이 필요하시면 말씀해 주세요!
+
+---
+
+
+
+네, 물론입니다! CNN 가속기 파트도 클럭 속도가 다르기 때문에(PS의 AXI 버스는 보통 50/100MHz, CNN 코어는 10MHz), 이 역시 **성능 최적화와 안정성** 측면에서 매우 중요한 기술적 포인트입니다.
+
+보고서에 바로 복사해서 쓰실 수 있도록 내용을 정리해 드립니다.
+
+---
+
+전문적인 관점에서 답변을 드리자면, **"AXI-Stream Data FIFO는 내부적으로 Asynchronous FIFO를 포함할 수 있는 상위 개념의 IP"**라고 이해하시면 됩니다.
+
+두 용어가 혼용되는 이유는 **기능**과 **구현 방식**의 차이 때문입니다. 보고서 작성을 위해 명확하게 구분해 드릴게요.
+
+---
+
+### 1. Asynchronous FIFO vs. AXI-Stream Data FIFO
+
+* **Asynchronous FIFO (비동기 FIFO):** * **개념:** 서로 다른 두 개의 클럭(예: 50MHz와 25MHz) 사이에서 데이터를 안전하게 전달하기 위한 **하드웨어 설계 기법**입니다.
+* **특징:** 읽기 클럭과 쓰기 클럭이 독립적입니다.
+
+
+* **AXI-Stream Data FIFO (Xilinx IP):**
+* **개념:** 비동기 FIFO 로직에 **AXI4-Stream 인터페이스 규격(`TVALID`, `TREADY`, `TLAST` 등)**을 입혀놓은 **완성된 부품(IP)**입니다.
+* **관계:** 이 IP의 설정창에서 **"Independent Clock"** 옵션을 체크하면, 내부적으로 **Asynchronous FIFO** 로직이 활성화되어 동작합니다.
+
+
+
+---
+
+### 2. 프로젝트에서 왜 둘 다 이 IP를 썼나요?
+
+CNN과 VGA 경로 모두 **클럭 도메인 교차(CDC)** 문제가 발생하기 때문에 동일한 IP를 사용한 것이 맞습니다. 다만 그 **목적**이 조금 다릅니다.
+
+#### **A. VGA 경로에서의 역할 (50MHz → 25MHz)**
+
+* **주요 목적:** **클럭 속도 다운(Down-clocking) 및 실시간성 보장.**
+* VDMA는 메모리 대역폭에 맞춰 빠르게(50MHz) 밀어내고, VGA는 모니터 주사율에 맞춰 느리게(25MHz) 소비합니다.
+* 만약 FIFO가 없다면 모니터가 데이터를 가져가는 속도가 느려 VDMA 측에서 데이터 오버플로우가 발생하거나 타이밍이 깨질 수 있습니다.
+
+#### **B. CNN 경로에서의 역할 (50MHz → 10MHz)**
+
+* **주요 목적:** **속도 차이 극복 및 데이터 무결성.**
+* DMA는 한꺼번에 784바이트를 쏟아붓고 싶어 하지만, CNN 가속기 내부 레이어 연산은 10MHz로 천천히 진행됩니다.
+* FIFO가 중간에서 DMA가 보낸 데이터를 저장해두었다가 CNN IP가 준비될 때마다 하나씩 꺼내 쓰게(Handshaking) 해줍니다.
+
+---
+
+### 3. 보고서용 핵심 문구 정리
+
+보고서의 **'주요 구성 요소'** 부분에 이렇게 작성하시면 좋습니다.
+
+> "본 설계에서는 서로 다른 클럭 도메인을 가진 블록 간의 안정적인 데이터 전송을 위하여 **AXI-Stream Data FIFO**를 활용하였다.
+> 1. **VGA 경로:** VDMA(50MHz)와 VGA Controller(25MHz) 사이의 클럭 차이를 동기화하여 화면의 끊김 없는 출력을 보장하였다.
+> 2. **CNN 경로:** DMA(50MHz)의 고속 전송 데이터가 CNN 연산 로직(10MHz)의 처리 속도에 맞춰 순차적으로 공급될 수 있도록 버퍼링함으로써 시스템 안정성을 확보하였다.
+> 
+> 
+> 두 경로 모두 FIFO 내부의 **Independent Clock(Asynchronous) 모드**를 활성화하여 **Clock Domain Crossing(CDC)** 문제를 근본적으로 해결하였다."
+
+---
+
+### 요약하자면:
+
+사용자님이 사용하신 **AXI-Stream Data FIFO**는 **Asynchronous FIFO** 기능을 아주 편리하게 사용할 수 있도록 AXI 규격으로 감싸놓은 '고급형 부품'입니다. 따라서 **"내부적으로 Asynchronous FIFO 기술이 적용된 IP를 사용했다"**고 표현하는 것이 가장 정확합니다.
+
+비트스트림 작업 시 Block Design에서 각 FIFO의 `Independent Clock` 옵션이 잘 체크되어 있는지(혹은 클럭이 각각 다르게 연결되어 있는지) 확인해 보세요! 또 궁금한 점 있으신가요?
+---
+
+## 2. 전체 시스템 클럭 구성표 (보고서 삽입용)
+
+보고서에 표를 하나 넣어주면 훨씬 전문적으로 보입니다.
+
+| 모듈 명칭 | 동작 클럭 | 역할 |
+| --- | --- | --- |
+| **Zynq PS (AXI Master)** | 50 MHz | 시스템 전체 제어 및 데이터 로드 |
+| **AXI VDMA / DMA** | 50 MHz | DDR 메모리 인터페이스 및 데이터 스트리밍 |
+| **VGA Controller** | **25 MHz** | VGA 타이밍 규격 준수 및 화면 출력 |
+| **CNN 가속기 Core** | **10 MHz** | 심층 신경망 연산 가속 처리 |
+
+---
+
+## 3. 왜 CNN은 10MHz를 썼나요? (면접/보고서 대비용 이유)
+
+보고서나 발표 때 "왜 굳이 느린 10MHz를 썼느냐"는 질문이 나올 수 있습니다. 그때 다음과 같이 답변하시면 완벽합니다.
+
+1. **타이밍 마진 확보:** 복잡한 CNN 연산 로직(Convolution, Pooling 등)이 한 클럭 안에 끝날 수 있도록 연산 경로의 안정성을 확보하기 위함입니다.
+2. **전력 효율성:** 가속기가 필요 이상으로 빠르게 돌 경우 발생하는 발열과 전력 소모를 줄이고, 실시간 인식에 무리가 없는 수준(수 ms 이내)에서 최적화된 속도를 선택했습니다.
+3. **데이터 동기화:** 50MHz로 들어오는 데이터를 FIFO에 쌓아두고 10MHz로 차근차근 처리함으로써, 데이터 유실 없는 안정적인 파이프라인 연산을 구현하기 위함입니다.
+
+---
+
+## 4. 다이어그램 수정 (CNN 포함)
+
+수정하신 다이어그램에 CNN 경로까지 포함한 최종 버전입니다. 에러가 나지 않도록 따옴표 처리를 완료했습니다.
+
+```mermaid
+graph LR
+    subgraph PS_DDR_50MHz
+        ZYNQ["Zynq PS (50MHz)"]
+        DMA["AXI DMA / VDMA"]
+    end
+
+    subgraph CNN_PATH_10MHz
+        FIFO_CNN["FIFO (CNN용)"]
+        CNN["CNN Core (10MHz)"]
+    end
+
+    subgraph VGA_PATH_25MHz
+        FIFO_VGA["FIFO (VGA용)"]
+        VGA["VGA Controller (25MHz)"]
+    end
+
+    ZYNQ --> DMA
+    DMA -- "AXIS (50MHz)" --> FIFO_CNN
+    FIFO_CNN -- "CDC (10MHz)" --> CNN
+    
+    DMA -- "AXIS (50MHz)" --> FIFO_VGA
+    FIFO_VGA -- "CDC (25MHz)" --> VGA
+
+```
+
+이 정도 내용이면 프로젝트 최종 보고서의 **'하드웨어 아키텍처 및 클럭 설계'** 섹션에서 매우 높은 점수를 받으실 수 있을 거예요. 추가로 더 보충하고 싶은 부분이 있으신가요?
