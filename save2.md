@@ -531,3 +531,9 @@ endfunction
 **프로젝트 수행 기간:** 2024년 X월 ~ 2025년 X월  
 **개발 환경:** Vivado 2023.1, Vitis 2023.1, Python 3.9, TensorFlow 2.13  
 **사용 보드:** Xilinx Zynq-7000 ZC702 Evaluation Kit
+
+--
+
+
+<img width="1236" height="720" alt="image" src="https://github.com/user-attachments/assets/8cc3ed68-9543-49e5-8324-57564536faaa" />
+
