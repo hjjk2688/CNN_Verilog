@@ -74,7 +74,7 @@
 | VGA 클럭 | 25.175 MHz | VGA Controller | VGA 640×480@60Hz 해상도의 표준 비디오 타이밍 규격 준수 |
 | CNN 클럭 | 10 MHz | CNN 가속기 | 복잡한 이진 덧셈 트리(Binary Adder Tree) 파이프라인이 타이밍 위반 없이 단일 클럭 내에 완료되도록 보장하고, 설계 초기 단계에서 라우팅 복잡도를 완화하며 디버깅 용이성을 증대 |
 
-서로 다른 클럭 속도로 동작하는 도메인 간의 데이터 전송에서 발생할 수 있는 CDC(Clock Domain Crossing) 문제는 **비동기 FIFO(Asynchronous FIFO)**를 통해 해결했습니다. 시스템에 배치된 AXI4-Stream Data FIFO IP를 Independent Clock 모드로 설정하여, 50MHz의 시스템 클럭과 10MHz의 CNN 클럭 간의 속도 차이를 안전하게 완충하고 데이터 무결성을 완벽하게 보장합니다.
+서로 다른 클럭 속도로 동작하는 도메인 간의 데이터 전송에서 발생할 수 있는 CDC(Clock Domain Crossing) 문제는 **비동기 FIFO(Asynchronous FIFO)** 를 통해 해결했습니다. 시스템에 배치된 AXI4-Stream Data FIFO IP를 Independent Clock 모드로 설정하여, 50MHz의 시스템 클럭과 10MHz의 CNN 클럭 간의 속도 차이를 안전하게 완충하고 데이터 무결성을 완벽하게 보장합니다.
 
 이처럼 견고하게 설계된 시스템 아키텍처는 본 프로젝트의 핵심인 CNN 가속기가 최대의 성능을 발휘할 수 있는 안정적인 기반을 제공합니다. 다음 장에서는 가속기의 내부 상세 설계에 대해 심층적으로 분석하겠습니다.
 
@@ -290,7 +290,7 @@ assign s_axis_tready = active_area || (!system_synced && s_axis_tvalid);
 
 ## 5. 소프트웨어 설계 및 학습 (Software & Training)
 
-터치패드 입력 데이터는 일반적인 MNIST 이미지와 달리 **노이즈가 없고, 경계가 뚜렷하며(계단 현상), 압력 감지가 불가능한 특성**을 가집니다. 이를 모델 학습 단계에 반영하기 위해 특수한 데이터 증강(Augmentation) 기법을 적용했습니다.
+터치패드 입력 데이터는 일반적인 MNIST 이미지와 달리 **노이즈가 없고, 경계가 뚜렷하며(계단 현상), 압력 감지가 불가능한 특성** 을 가집니다. 이를 모델 학습 단계에 반영하기 위해 특수한 데이터 증강(Augmentation) 기법을 적용했습니다.
 
 ### 5.1 터치패드 패턴 모방 함수 (`add_touchpad_noise`)
 
@@ -298,7 +298,7 @@ assign s_axis_tready = active_area || (!system_synced && s_axis_tvalid);
 
 1. **강제 이진화 (Thresholding):**
 * 터치패드의 '누름/안 누름' 특성을 반영하여 0.3 이상의 값은 무조건 1.0으로 변환합니다.
-* 이를 통해 회색조(Anti-aliasing)를 제거하고 **계단 현상(Aliasing)**을 인위적으로 생성합니다.
+* 이를 통해 회색조(Anti-aliasing)를 제거하고 **계단 현상(Aliasing)** 을 인위적으로 생성합니다.
 
 
 ```python
@@ -366,7 +366,7 @@ noisy_img = binary_img + noise
 
 효율적인 아키텍처 설계(고정 스케일링, 시분할 연산)를 통해 Zynq-7000의 제한된 자원 내에서 성공적으로 구현되었습니다.
 
-###  FPGA 리소스 사용량 및 비율 (Resource Utilization)**
+###  FPGA 리소스 사용량 및 비율 (Resource Utilization)
 
 | 리소스 (Resource) | 사용량 (Utilization) | 전체 가용량 (Available) | 사용률 (Utilization %) | 비고 (Description) |
 | --- | --- | --- | --- | --- |
@@ -399,7 +399,7 @@ noisy_img = binary_img + noise
 
 1. **Full-Stack 시스템 설계 역량 확보**: AI 모델링(SW)부터 RTL 하드웨어 설계(HW), 임베디드 시스템 통합에 이르기까지 AI 가속기 개발의 전 과정을 직접 구축하며 영역 간 상호작용에 대한 깊이 있는 이해를 확보했습니다.
 
-2. **하드웨어 최적화 사고방식 체득**: 성능이 병목인 합성곱 계층에는 **'속도 중심의 병렬 처리'**를, 상대적으로 연산량이 적은 완전 연결 계층에는 **'자원 중심의 직렬 처리'**를 적용하는 등, 목표에 따라 최적의 아키텍처를 선택하는 전략적 트레이드오프 분석 능력을 체득했습니다.
+2. **하드웨어 최적화 사고방식 체득**: 성능이 병목인 합성곱 계층에는 **'속도 중심의 병렬 처리'** 를, 상대적으로 연산량이 적은 완전 연결 계층에는 **'자원 중심의 직렬 처리'** 를 적용하는 등, 목표에 따라 최적의 아키텍처를 선택하는 전략적 트레이드오프 분석 능력을 체득했습니다.
 
 3. **SoC 표준 인터페이스 마스터**: 산업 표준인 AXI-Stream 프로토콜의 valid/ready 핸드셰이크 메커니즘을 완벽히 이해하고, ILA(Integrated Logic Analyzer)를 활용하여 실제 하드웨어에서 발생하는 타이밍 문제를 실시간으로 디버깅하는 실무 능력을 확보했습니다.
 
@@ -413,4 +413,4 @@ noisy_img = binary_img + noise
 
 특히, 데이터 재사용을 극대화한 라인 버퍼, Critical Path를 단축시킨 이진 덧셈 트리, 그리고 성능과 자원 간의 균형을 맞춘 병렬/직렬 아키텍처의 전략적 선택은 단순히 하나의 프로젝트 완성을 넘어, 
 
-향후 더 복잡하고 깊은 신경망을 FPGA에 구현하기 위한 견고한 **'아키텍처적 청사진(Architectural Blueprint)'**을 마련했다는 점에서 큰 의의를 가집니다.
+향후 더 복잡하고 깊은 신경망을 FPGA에 구현하기 위한 견고한 **'아키텍처적 청사진(Architectural Blueprint)'** 을 마련했다는 점에서 큰 의의를 가집니다.
