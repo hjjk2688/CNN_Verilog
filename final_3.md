@@ -240,6 +240,51 @@ always @(posedge clk) begin
 end
 
 ```
+---
+
+## 4.5 VGA 디스플레이 컨트롤러 설계 (VGA Display Controller)
+
+VGA 컨트롤러는 VDMA로부터 스트리밍되는 영상 데이터를 받아 표준 모니터 타이밍(Hsync, Vsync)에 맞춰 픽셀을 출력하는 역할을 합니다. 본 프로젝트에서는 **640x480 @ 60Hz** 해상도를 지원하며, AXI4-Stream 프로토콜과 VGA 타이밍 간의 비동기 문제를 해결하기 위해 **초기 프레임 동기화(Frame Synchronization) 로직**을 적용했습니다.
+
+### 4.5.1 해상도 및 타이밍 규격
+
+표준 VGA 신호 규격을 준수하기 위해 25MHz 픽셀 클럭을 기반으로 수평(Horizontal) 및 수직(Vertical) 타이밍 파라미터를 설정하였습니다.
+
+```verilog
+// [코드 분석: vga_controller.v]
+// 640x480 @ 60Hz 표준 타이밍 파라미터 정의
+localparam H_VISIBLE = 640;
+localparam H_TOTAL   = 800; // Visible + Front + Sync + Back
+localparam V_VISIBLE = 480;
+localparam V_TOTAL   = 525;
+
+```
+
+### 4.5.2 프레임 동기화 및 AXI 핸드셰이킹
+
+VDMA는 메모리 상황에 따라 버스트로 데이터를 보내지만, VGA는 엄격한 실시간 타이밍을 요구합니다. 특히 시스템 초기 구동 시, 데이터 스트림의 시작점과 VGA 카운터의 (0,0) 시점이 어긋나는 현상(Image Rolling)을 방지하기 위해 **강제 정렬 로직**을 구현했습니다.
+
+* **동기화 전략:** 시스템 리셋 후 아직 동기화되지 않은 상태(`!system_synced`)에서 첫 번째 유효 데이터(`tvalid`)가 도착하면, 그 즉시 `h_cnt`와 `v_cnt`를 0으로 강제 초기화하여 프레임의 시작점을 맞춥니다.
+
+```verilog
+// [코드 분석: vga_controller.v]
+// 시스템 켜진 후 첫 데이터(Valid)가 도착했을 때 카운터 강제 리셋 (Sync 맞춤)
+if (!system_synced && s_axis_tvalid && s_axis_tready) begin
+    h_cnt <= 0;          // 좌표를 무조건 0,0으로 강제 초기화
+    v_cnt <= 0;
+    system_synced <= 1;  // 정렬 완료 플래그 설정 (이후에는 일반 카운팅 동작)
+end
+
+```
+
+또한, VGA가 실제로 화면을 출력하는 유효 구간(`active_area`)에서만 데이터를 요청(`tready = 1`)하는 백프레셔(Backpressure) 메커니즘을 통해 데이터 흐름을 제어합니다.
+
+```verilog
+// [코드 분석: vga_controller.v]
+// 화면 출력 구간(Active Area)이거나, 초기 싱크를 맞추는 중일 때만 Ready 신호 출력
+assign s_axis_tready = active_area || (!system_synced && s_axis_tvalid);
+
+```
 
 ---
 
