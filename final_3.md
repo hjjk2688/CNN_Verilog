@@ -214,11 +214,16 @@ conv_out_calc <= ($signed(final_sum_s7) >>> 7) + 8'shcf;
 // cnn_top.v
 localparam S_IDLE = 3'd0, S_RUN_CNN = 3'd1, S_PADDING = 3'd2, ...;
 
-// S_PADDING 상태일 때 외부 데이터 대신 0(검정색)을 강제 주입
-assign cnn_data_in = (state == S_PADDING) ? 8'd0 : s_axis_tdata;
-
-// padding_cnt를 이용해 일정 시간 동안 플러싱을 유지
-if (state == S_PADDING && padding_cnt > 2000) state <= S_WAIT_DONE;
+ S_PADDING: begin
+     cnn_pipeline_valid <= 1'b1;
+     padding_cnt <= padding_cnt + 1;
+     
+     // 2000클럭 밀어내기
+     if (padding_cnt > 2000) begin
+          state <= S_WAIT_DONE;
+          cnn_pipeline_valid <= 1'b0;
+     end
+ end
 ```
 
 ### 5.3 합성곱 연산 계층: 극단적 병렬화
@@ -305,7 +310,7 @@ end
 final_sum_s7 <= sum1_s6 + sum2_s6 + sum3_s6;
 ```
 
-**결과:** 총 75개(25×3)의 곱셈기가 병렬로 동작하며, 이는 **3D 합성곱(C_in × K_h × K_w)의 완전 병렬화** 를 의미한다.
+**결과:** conv2에는 3개의 calc 있기 때문에 총 225개(75×3)의 곱셈기가 병렬로 동작하며, 이는 **3D 합성곱(C_in × K_h × K_w)의 완전 병렬화** 를 의미한다.
 
 ### 5.4 완전 연결 계층: 자원 효율화
 
