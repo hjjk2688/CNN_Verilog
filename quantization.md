@@ -1,8 +1,3 @@
-
- **표준적인 방법(Theory)을 먼저 제시하고, 우리 시스템의 특수성(Constraint)을 분석한 뒤, 이를 바탕으로 최적화된 설계(Optimization)를 도출했다**는 논리적인 흐름으로 구성했습니다.
-
----
-
 # 3. 양자화 전략 및 하드웨어 최적화 (Quantization Strategy & Hardware Optimization)
 
 ## 3.1. 개요 (Overview)
